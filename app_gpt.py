@@ -1,13 +1,14 @@
 import streamlit as st
-import openai, os, re
+from openai import OpenAI
+import os, re
 from pathlib import Path
 
 st.set_page_config(page_title="유란시아서 강론 생성기 (GPT 버전)", layout="wide")
 st.title("유란시아서 강론 생성기 (GPT 버전)")
 st.write("장 형식: 예) 1:2 (1편 2장). 본문은 urantia_ko.txt 를 기준으로 합니다.")
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+if not os.getenv("OPENAI_API_KEY"):
     st.warning("⚠️ OpenAI API 키가 설정되어 있지 않습니다. Render 환경변수에 OPENAI_API_KEY를 추가하세요.")
 
 TEXT_PATH = Path("urantia_ko.txt")
@@ -55,19 +56,22 @@ def find_section_title(paper: str, section: str):
 
 def make_easy_commentary_gpt(title: str, source_lines):
     text = "\n".join(source_lines)
-    if not openai.api_key:
+    if not os.getenv("OPENAI_API_KEY"):
         return "⚠️ OpenAI API 키가 없어 자동 강론 생성을 수행할 수 없습니다."
+    prompt = f"""
+유란시아서의 다음 본문을 바탕으로, 중학생이 이해할 수 있는 1000자 내외의 강론문을 작성해 주세요.
+제목은 "{title}"입니다.
+
+본문:
+{text}
+
+조건:
+- 유란시아서의 용어(예: 우주 아버지, 생각 조절자)는 그대로 사용합니다.
+- 구조: 도입 → 본문 해설 → 교훈 → 결론
+- 문장은 짧고 명확하게 씁니다.
+"""
     try:
-        prompt = (
-            "유란시아서의 다음 본문을 바탕으로, 중학생이 이해할 수 있는 1000자 내외의 강론문을 작성해 주세요.\n"
-            f"제목은 '{title}'입니다.\n\n"
-            f"본문:\n{text}\n\n"
-            "조건:\n"
-            "- 유란시아서의 용어(예: 우주 아버지, 생각 조절자)는 그대로 사용합니다.\n"
-            "- 구조: 도입 -> 본문 해설 -> 교훈 -> 결론\n"
-            "- 문장은 짧고 명확하게 씁니다."
-        )
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "당신은 유란시아서를 중학생에게 쉽게 설명하는 신학 강론가입니다."},
