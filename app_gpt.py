@@ -28,23 +28,26 @@ lines = full_text.splitlines()
 # ---------------- 유틸 함수들 ----------------
 def extract_section_lines(paper: str, section: str):
     """
-    '1:2' -> '1:2.' 로 시작하는 줄부터 같은 편의 다음 장이 나올 때까지 모음
+    입력 예: '4:5' -> '4:5.'로 시작하는 줄부터
+    '4:6.' 또는 '5:1.'이 등장하면 중단.
     """
-    target_prefix = f"{paper}:{section}."
     collected = []
     collecting = False
+
+    pattern_start = re.compile(rf"^{paper}:{section}\.")
+    pattern_next_section = re.compile(rf"^{paper}:(?!{section})\d+\.")
+    pattern_next_paper = re.compile(rf"^{int(paper)+1}:\d+\.")
+
     for line in lines:
         raw = line.strip()
-        if raw.startswith(target_prefix):
+        if pattern_start.match(raw):
             collecting = True
-            collected.append(raw)
-            continue
-        if collecting:
-            # 같은 편의 다른 장으로 넘어가면 중단
-            if re.match(rf"^{paper}:\d+\.", raw):
+        elif collecting:
+            # 다음 장 또는 다음 편 시작 시 종료
+            if pattern_next_section.match(raw) or pattern_next_paper.match(raw):
                 break
-            if raw:
-                collected.append(raw)
+        if collecting:
+            collected.append(raw)
     return collected
 
 
