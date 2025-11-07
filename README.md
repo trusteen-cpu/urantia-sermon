@@ -1,25 +1,22 @@
 
-# 유란시아서 강론 생성기 (GPT 버전, OpenAI SDK 1.0 호환)
+# 유란시아서 강론 생성기 (v5)
 
-이 버전은 OpenAI 최신 SDK(`openai>=1.0.0`) 호환 버전으로, GPT-4o-mini 모델을 사용하여
-본문 내용을 분석해 1,000자 강론문을 자동 생성합니다.
+장/절을 입력하면:
+1. urantia_ko.txt 에서 해당 본문을 정확히 추출하고
+2. GPT가 학문적이면서 감동적인 단일 설교 스크립트를 생성하고
+3. 그 설교를 5장짜리 발표 슬라이드로 요약해 줍니다.
 
-## 실행 방법
-
-1. 같은 폴더에 `urantia_ko.txt` 파일을 둡니다.
-2. Render 또는 로컬 환경에서 OpenAI API 키를 등록합니다:
-
-```bash
-export OPENAI_API_KEY=sk-xxxx...
-```
-
-3. 설치 및 실행:
+## 실행
 
 ```bash
 pip install -r requirements.txt
 streamlit run app_gpt.py
 ```
 
+같은 폴더에 `urantia_ko.txt` 를 두세요.
+
 ## Render 설정
-- **Build Command:** `pip install -r requirements.txt`
-- **Start Command:** `streamlit run app_gpt.py --server.port $PORT --server.address 0.0.0.0`
+
+- Build command: `pip install -r requirements.txt`
+- Start command: `streamlit run app_gpt.py --server.port $PORT --server.address 0.0.0.0`
+- Env: `OPENAI_API_KEY=sk-...`

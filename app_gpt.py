@@ -1,40 +1,49 @@
-import streamlit as st
-from openai import OpenAI
-import os, re
+import os
+import re
 from pathlib import Path
 
-st.set_page_config(page_title="유란시아서 강론 생성기 (GPT 버전)", layout="wide")
-st.title("유란시아서 강론 생성기 (GPT 버전)")
-st.write("장 형식: 예) 1:2 (1편 2장). 본문은 urantia_ko.txt 를 기준으로 합니다.")
+import streamlit as st
+from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-if not os.getenv("OPENAI_API_KEY"):
-    st.warning("⚠️ OpenAI API 키가 설정되어 있지 않습니다. Render 환경변수에 OPENAI_API_KEY를 추가하세요.")
+# ---------------- 기본 설정 ----------------
+st.set_page_config(page_title="유란시아서 강론 생성기 (v5)", layout="wide")
+st.title("유란시아서 강론 생성기 (v5)")
+st.write("입력 예: 3:5  (3편 5장). 같은 폴더에 urantia_ko.txt 가 있어야 합니다.")
 
+api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key) if api_key else None
+if not api_key:
+    st.warning("⚠️ OPENAI_API_KEY 환경변수가 없습니다. Render나 로컬에서 키를 넣어주세요.")
+
+# ---------------- 본문 로드 ----------------
 TEXT_PATH = Path("urantia_ko.txt")
 if not TEXT_PATH.exists():
     st.error("⚠️ urantia_ko.txt 파일을 찾을 수 없습니다. 같은 폴더에 두고 다시 실행해 주세요.")
     st.stop()
 
-full_text = TEXT_PATH.read_text(encoding="utf-8")
-lines = full_text.splitlines()
+lines = TEXT_PATH.read_text(encoding="utf-8").splitlines()
 
+# ---------------- 본문 추출 ----------------
 def extract_section_lines(paper: str, section: str):
-    target_prefix = f"{paper}:{section}."
-    collected, collecting = [], False
+    collected = []
+    collecting = False
+    pattern_start = re.compile(rf"^{paper}:{section}\.")
+    pattern_next_section = re.compile(rf"^{paper}:(?!{section})\d+\.")
+    next_paper = int(paper) + 1
+    pattern_next_paper = re.compile(rf"^제\s*{next_paper}\s*편")
+
     for line in lines:
         raw = line.strip()
-        if raw.startswith(target_prefix):
+        if pattern_start.match(raw):
             collecting = True
-            collected.append(raw)
-            continue
-        if collecting:
-            if re.match(rf"^{paper}:\d+\.", raw):
+        elif collecting:
+            if pattern_next_section.match(raw) or pattern_next_paper.match(raw):
                 break
-            if raw:
-                collected.append(raw)
+        if collecting:
+            collected.append(raw)
     return collected
 
+# ---------------- 제목 찾기 ----------------
 def find_section_title(paper: str, section: str):
     target_prefix = f"{paper}:{section}."
     first_idx = None
@@ -45,79 +54,158 @@ def find_section_title(paper: str, section: str):
     if first_idx is None:
         return f"{paper}편 {section}장"
     for back in range(first_idx - 1, -1, -1):
-        l = lines[back].strip()
-        if re.match(r"^\d+\.\s", l):
-            return l.split(".", 1)[1].strip()
-        if re.match(r"^제\s*\d+\s*편", l):
-            return l.strip()
+        txt = lines[back].strip()
+        if re.match(r"^\d+\.\s", txt):
+            return txt.split(".", 1)[1].strip()
+        if re.match(r"^제\s*\d+\s*편", txt):
+            return txt.strip()
         if back < first_idx - 80:
             break
     return f"{paper}편 {section}장"
 
-def make_easy_commentary_gpt(title: str, source_lines):
+# ---------------- GPT 설교 생성 ----------------
+def create_sermon(title: str, paper: str, section: str, source_lines):
+    if client is None:
+        return "⚠️ OpenAI API 키가 없어 설교를 만들 수 없습니다."
     text = "\n".join(source_lines)
-    if not os.getenv("OPENAI_API_KEY"):
-        return "⚠️ OpenAI API 키가 없어 자동 강론 생성을 수행할 수 없습니다."
-    prompt = f"""
-유란시아서의 다음 본문을 바탕으로, 중학생이 이해할 수 있는 1000자 내외의 강론문을 작성해 주세요.
-제목은 "{title}"입니다.
+    prompt = f"""다음은 유란시아서 제 {paper}편 {section}장 "{title}"의 실제 본문입니다.
+
+당신은 유란시아서를 깊이 이해한 신중한 신학자이자 감동적인 설교자입니다.
+아래 조건에 맞는 하나의 완성된 설교 스크립트를 작성하세요.
+
+조건:
+- 길이: 약 1000~1200자
+- 구조: 도입 → 본문 해석 → 신학적 의미 → 개인적 적용 → 결론
+- 본문 전체를 인용하지 말고, 핵심이 되는 1~2문장만 직접 인용하세요.
+- 인용 시 반드시 (편:장.절) 형식을 덧붙이세요. 예: (3:5.2)
+- 유란시아서 특유의 용어(우주 아버지, 생각 조절자 등)는 변경하지 마세요.
+- 어조는 학문적이고 신중하되, 중간에 설교형 감동체로 고조시키세요.
+- 설교문 안에는 슬라이드 구분을 넣지 마세요. 하나의 글로 자연스럽게 이어지게 하세요.
 
 본문:
 {text}
-
-조건:
-- 유란시아서의 용어(예: 우주 아버지, 생각 조절자)는 그대로 사용합니다.
-- 구조: 도입 → 본문 해설 → 교훈 → 결론
-- 문장은 짧고 명확하게 씁니다.
 """
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
+        resp = client.chat.completions.create(
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "당신은 유란시아서를 중학생에게 쉽게 설명하는 신학 강론가입니다."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "당신은 유란시아서를 해설하는 신중한 신학자이자 감동적인 설교자입니다."},
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
         )
-        return response.choices[0].message.content.strip()
+        return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"⚠️ OpenAI API 호출 오류: {e}"
 
-def make_ppt_slides(title: str, paper: str, section: str, commentary: str):
-    slides = [
-        {"title": title, "bullets": [f"본문: {paper}:{section}", "핵심 요약", "중학생도 이해할 수 있는 해설"]},
-        {"title": "1. 핵심 개념", "bullets": ["본문이 전하는 주된 사상", "하나님, 인격, 우주 관계"]},
-        {"title": "2. 주요 교훈", "bullets": ["본문을 통해 배울 수 있는 신앙적 통찰", "하나님과 인간 인격의 관계"]},
-        {"title": "3. 실제 적용", "bullets": ["일상에서 적용할 수 있는 태도", "하나님을 인격적으로 이해하기"]},
-        {"title": "4. 결론", "bullets": ["핵심 요약 및 느낀 점", "사랑과 봉사의 실천으로 마무리"]},
-    ]
-    return slides
+# ---------------- GPT 슬라이드 요약 ----------------
+def create_slides_from_sermon(sermon: str):
+    if client is None:
+        # fallback: naive split
+        paras = [p.strip() for p in sermon.split("\n") if len(p.strip()) > 50]
+        slides = []
+        for i, p in enumerate(paras[:5]):
+            slides.append({
+                "title": f"슬라이드 {i+1}",
+                "quote": "",
+                "content": p
+            })
+        return slides
 
-user_input = st.text_input("장/절을 입력하세요 (예: 1:2)", value="1:2")
+    prompt = f"""다음은 유란시아서 강론 설교문입니다.
 
-if st.button("강론 생성하기"):
+이 설교문의 핵심을 5장의 슬라이드로 요약해 주세요.
+
+형식:
+슬라이드 1. (짧은 제목)
+본문 인용: (설교문 안에 (3:5.2) 처럼 표시된 인용이 있으면 그 문장만 넣고, 없으면 이 줄은 생략)
+요약: (발표자가 그대로 읽을 2~3문장)
+
+---
+슬라이드 2. ...
+---
+슬라이드 3. ...
+---
+슬라이드 4. ...
+---
+슬라이드 5. ...
+
+설교문:
+{sermon}
+"""
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "너는 설교문을 발표용 슬라이드로 뽑아내는 조교다."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
+        text = resp.choices[0].message.content.strip()
+        # 단순 파서: --- 로 나눔
+        parts = [p.strip() for p in text.split("---") if p.strip()]
+        slides = []
+        for p in parts:
+            lines = p.splitlines()
+            title = lines[0].strip() if lines else "슬라이드"
+            quote = ""
+            content_lines = []
+            for ln in lines[1:]:
+                if ln.startswith("본문 인용:"):
+                    quote = ln.replace("본문 인용:", "").strip()
+                elif ln.startswith("요약:"):
+                    content_lines.append(ln.replace("요약:", "").strip())
+                else:
+                    content_lines.append(ln.strip())
+            slides.append({
+                "title": title,
+                "quote": quote,
+                "content": "\n".join(content_lines).strip()
+            })
+        return slides[:5]
+    except Exception:
+        # fallback
+        paras = [p.strip() for p in sermon.split("\n") if len(p.strip()) > 50]
+        slides = []
+        for i, p in enumerate(paras[:5]):
+            slides.append({
+                "title": f"슬라이드 {i+1}",
+                "quote": "",
+                "content": p
+            })
+        return slides
+
+
+# ---------------- UI ----------------
+user_input = st.text_input("장/절을 입력하세요", value="3:5")
+
+if st.button("생성하기"):
     if ":" not in user_input:
-        st.error("형식이 올바르지 않습니다. 예: 1:2 처럼 입력해 주세요.")
+        st.error("형식이 올바르지 않습니다. 예: 3:5")
     else:
         paper, section = user_input.split(":", 1)
         paper, section = paper.strip(), section.strip()
 
         section_lines = extract_section_lines(paper, section)
         if not section_lines:
-            st.error("해당 장을 찾을 수 없습니다. urantia_ko.txt의 번호와 일치하는지 확인해 주세요.")
+            st.error("해당 장을 찾지 못했습니다. urantia_ko.txt 형식을 확인하세요.")
         else:
             title = find_section_title(paper, section)
-            st.subheader("① 원문(추출된 줄)")
+
+            st.markdown(f"### 📖 제{paper}편 {section}장 {title}")
+            st.subheader("① 추출된 원문")
             st.code("\n".join(section_lines))
 
-            st.subheader("② GPT 자동 생성 강론 (약 1,000자)")
-            commentary = make_easy_commentary_gpt(title, section_lines)
-            st.markdown(commentary)
+            st.subheader("② GPT 설교 스크립트")
+            sermon = create_sermon(title, paper, section, section_lines)
+            st.markdown(sermon)
 
-            st.subheader("③ 5장 PPT 요약")
-            slides = make_ppt_slides(title, paper, section, commentary)
+            st.subheader("③ PPT 슬라이드 (요약 5장)")
+            slides = create_slides_from_sermon(sermon)
             for i, slide in enumerate(slides, start=1):
-                st.markdown(f"**슬라이드 {i}. {slide['title']}**")
-                for b in slide["bullets"]:
-                    st.write(f"- {b}")
+                st.markdown(f"**{slide['title']}**")
+                if slide["quote"]:
+                    st.markdown(f"> {slide['quote']}")
+                st.write(slide["content"])
                 st.write("")
